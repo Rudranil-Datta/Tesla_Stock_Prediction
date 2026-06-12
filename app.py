@@ -27,6 +27,7 @@ def load_data():
 df = load_data()
 df["Date"] = pd.to_datetime(df["Date"])
 
+
 # --------------------------------------------------
 # PREPROCESS DATA
 # --------------------------------------------------
@@ -134,7 +135,27 @@ selected_date = st.date_input(
 
 selected_date = pd.to_datetime(selected_date)
 
-idx = df[df["Date"] == selected_date].index[0]
+matches = df[df["Date"].dt.date == selected_date.date()]
+
+if len(matches) == 0:
+
+    nearest_idx = (
+        (df["Date"] - selected_date)
+        .abs()
+        .idxmin()
+    )
+
+    nearest_date = df.loc[nearest_idx, "Date"]
+
+    st.warning(
+        f"No trading data available for {selected_date.strftime('%Y-%m-%d')}. "
+        f"Using nearest trading day: {nearest_date.strftime('%Y-%m-%d')}."
+    )
+
+    idx = nearest_idx
+
+else:
+    idx = matches.index[0]
 
 historical_window = scaled_data[idx - 60:idx]
 
