@@ -223,7 +223,17 @@ fig = px.line(
     labels={
         "Date": "Year",
         "Close": "Closing Price (USD $)"
+    },
+    hover_data={
+        "Date": "|%Y-%m-%d",
+        "Close": ":.2f"
     }
+)
+
+fig.update_traces(
+    hovertemplate=
+    "<b>Date:</b> %{x}<br>" +
+    "<b>Close:</b> $%{y:.2f}<extra></extra>"
 )
 
 st.plotly_chart(
