@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
@@ -24,52 +25,32 @@ def load_data():
     return pd.read_csv("TSLA.csv")
 
 df = load_data()
+df["Date"] = pd.to_datetime(df["Date"])
 
 # --------------------------------------------------
 # PREPROCESS DATA
 # --------------------------------------------------
 
-close_prices = df[['Close']]
+close_prices = df[["Close"]]
 
-scaler = MinMaxScaler(feature_range=(0,1))
-
+scaler = MinMaxScaler(feature_range=(0, 1))
 scaled_data = scaler.fit_transform(close_prices)
 
 LOOKBACK = 60
 
 # --------------------------------------------------
-# SIDEBAR
-# --------------------------------------------------
-
-st.sidebar.title("Forecast Settings")
-
-horizon = st.sidebar.selectbox(
-    "Select Forecast Horizon",
-    [
-        "1 Day",
-        "5 Days",
-        "10 Days"
-    ]
-)
-
-# --------------------------------------------------
-# LOAD MODEL
+# LOAD MODELS
 # --------------------------------------------------
 
 @st.cache_resource
-def load_prediction_model(horizon):
+def load_models():
+    return (
+        load_model("models/model_1day.keras"),
+        load_model("models/model_5day.keras"),
+        load_model("models/model_10day.keras")
+    )
 
-    if horizon == "1 Day":
-        return load_model("models/model_1day.keras")
-
-    elif horizon == "5 Days":
-        return load_model("models/model_5day.keras")
-
-    else:
-        return load_model("models/model_10day.keras")
-
-
-model = load_prediction_model(horizon)
+model_1, model_5, model_10 = load_models()
 
 # --------------------------------------------------
 # HEADER
@@ -84,76 +65,134 @@ st.markdown(
 )
 
 # --------------------------------------------------
-# METRICS
+# METRIC
 # --------------------------------------------------
 
-latest_price = float(close_prices.iloc[-1])
+latest_price = float(close_prices["Close"].iloc[-1])
 
-col1, col2 = st.columns(2)
-
-with col1:
-    st.metric(
-        "Latest Closing Price",
-        f"${latest_price:.2f}"
-    )
-
-with col2:
-    st.metric(
-        "Forecast Horizon",
-        horizon
-    )
+st.metric(
+    "Latest Closing Price",
+    f"${latest_price:.2f}"
+)
 
 # --------------------------------------------------
-# PREPARE INPUT
+# FUTURE FORECASTING
 # --------------------------------------------------
+
+st.subheader("🔮 Future Forecasts")
 
 last_60_days = scaled_data[-LOOKBACK:]
+X_future = np.array([last_60_days])
 
-X_input = np.array([last_60_days])
+if st.button("Generate Future Forecasts"):
 
-# --------------------------------------------------
-# PREDICTION BUTTON
-# --------------------------------------------------
+    with st.spinner("Generating forecasts..."):
 
-if st.button("Generate Forecast"):
+        pred_1 = model_1.predict(X_future, verbose=0)
+        pred_5 = model_5.predict(X_future, verbose=0)
+        pred_10 = model_10.predict(X_future, verbose=0)
 
+        pred_1 = scaler.inverse_transform(pred_1)[0][0]
+        pred_5 = scaler.inverse_transform(pred_5)[0][0]
+        pred_10 = scaler.inverse_transform(pred_10)[0][0]
 
+        future_df = pd.DataFrame({
+            "Forecast Horizon": [
+                "1 Day",
+                "5 Days",
+                "10 Days"
+            ],
+            "Predicted Price ($)": [
+                round(pred_1, 2),
+                round(pred_5, 2),
+                round(pred_10, 2)
+            ]
+        })
 
-    with st.spinner("Generating forecast..."):
-    
-        prediction = model.predict(
-            X_input,
-            verbose=0
-        )
+    st.success("Future forecasts generated successfully")
 
-
-        predicted_price = scaler.inverse_transform(
-            prediction
-        )
-
-    st.success(
-        f"Predicted Tesla Closing Price: ${predicted_price[0][0]:.2f}"
+    st.dataframe(
+        future_df,
+        width="stretch"
     )
 
+# --------------------------------------------------
+# HISTORICAL BACKTESTING
+# --------------------------------------------------
 
-    
+st.subheader("📊 Advanced Historical Backtesting")
 
+min_date = df["Date"].iloc[60].date()
+max_date = df["Date"].iloc[-11].date()
 
+selected_date = st.date_input(
+    "Select Historical Date",
+    value=max_date,
+    min_value=min_date,
+    max_value=max_date
+)
+
+selected_date = pd.to_datetime(selected_date)
+
+idx = df[df["Date"] == selected_date].index[0]
+
+historical_window = scaled_data[idx - 60:idx]
+
+X_backtest = np.array([historical_window])
+
+if st.button("Run Historical Backtest"):
+
+    with st.spinner("Generating historical forecasts..."):
+
+        pred_1 = model_1.predict(X_backtest, verbose=0)
+        pred_5 = model_5.predict(X_backtest, verbose=0)
+        pred_10 = model_10.predict(X_backtest, verbose=0)
+
+        pred_1 = scaler.inverse_transform(pred_1)[0][0]
+        pred_5 = scaler.inverse_transform(pred_5)[0][0]
+        pred_10 = scaler.inverse_transform(pred_10)[0][0]
+
+        actual_1 = df["Close"].iloc[idx + 1]
+        actual_5 = df["Close"].iloc[idx + 5]
+        actual_10 = df["Close"].iloc[idx + 10]
+
+        comparison_df = pd.DataFrame({
+            "Forecast Horizon": [
+                "1 Day",
+                "5 Days",
+                "10 Days"
+            ],
+            "Predicted Price ($)": [
+                round(pred_1, 2),
+                round(pred_5, 2),
+                round(pred_10, 2)
+            ],
+            "Actual Price ($)": [
+                round(actual_1, 2),
+                round(actual_5, 2),
+                round(actual_10, 2)
+            ],
+            "Absolute Error ($)": [
+                round(abs(pred_1 - actual_1), 2),
+                round(abs(pred_5 - actual_5), 2),
+                round(abs(pred_10 - actual_10), 2)
+            ]
+        })
+
+    st.success(
+        f"Historical forecast generated for {selected_date.strftime('%Y-%m-%d')}"
+    )
+
+    st.dataframe(
+        comparison_df,
+        width="stretch"
+    )
 
 # --------------------------------------------------
 # HISTORICAL CHART
 # --------------------------------------------------
 
-st.subheader("Tesla Historical Closing Prices")
-
-df['Date'] = pd.to_datetime(df['Date'])
-
-chart_df = df[['Date', 'Close']].copy()
-chart_df = chart_df.set_index('Date')
-
-#st.line_chart(chart_df)
-
-import plotly.express as px
+st.subheader("📈 Tesla Historical Closing Prices")
 
 fig = px.line(
     df,
@@ -166,7 +205,10 @@ fig = px.line(
     }
 )
 
-st.plotly_chart(fig, width="stretch")
+st.plotly_chart(
+    fig,
+    width="stretch"
+)
 
 # --------------------------------------------------
 # RECENT DATA
@@ -176,7 +218,7 @@ with st.expander("View Recent Stock Data"):
 
     st.dataframe(
         df.tail(20),
-        use_container_width=True
+        width="stretch"
     )
 
 # --------------------------------------------------
@@ -185,12 +227,10 @@ with st.expander("View Recent Stock Data"):
 
 with st.expander("Dataset Information"):
 
-    st.write(
-        f"Total Records: {len(df)}"
-    )
+    st.write(f"Total Records: {len(df)}")
 
     st.write(
-        f"Date Range: {df.iloc[0]['Date']} to {df.iloc[-1]['Date']}"
+        f"Date Range: {df.iloc[0]['Date'].date()} to {df.iloc[-1]['Date'].date()}"
     )
 
 # --------------------------------------------------
@@ -205,7 +245,7 @@ with st.expander("Model Information"):
 
         **Lookback Window:** 60 Days
 
-        **Forecast Horizons:**
+        **Forecast Horizons**
         - 1 Day Ahead
         - 5 Days Ahead
         - 10 Days Ahead
@@ -213,6 +253,8 @@ with st.expander("Model Information"):
         **Target Variable:** Closing Price
 
         **Scaling Method:** MinMaxScaler
+
+        **Additional Feature:** Historical Backtesting
         """
     )
 
