@@ -159,12 +159,14 @@ Three separate forecasting models were trained:
 
 ---
 
-## Running the Project
+## Live link : https://teslastockprediction-lhjmvfpekwdxerqqyb4oj8.streamlit.app/
+
+## Running the Project locally
 
 ### Step 1: Clone Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Rudranil-Datta/Tesla_Stock_Prediction.git
 cd Tesla_Stock_Prediction
 ```
 
